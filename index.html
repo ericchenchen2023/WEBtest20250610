@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8" />
+  <title>智能双语翻译与词汇学习工具</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 30px;
+      background-color: #f9f9f9;
+      color: #333;
+    }
+    h1 {
+      color: #222;
+    }
+    input, button {
+      padding: 10px;
+      font-size: 16px;
+      width: 100%;
+      margin-bottom: 20px;
+    }
+    .translation {
+      display: flex;
+      flex-direction: row;
+      margin-bottom: 20px;
+      background-color: #fff;
+      padding: 15px;
+      border-radius: 8px;
+      box-shadow: 0 0 5px rgba(0,0,0,0.1);
+    }
+    .en, .zh, .vocab {
+      width: 33%;
+      padding: 10px;
+      vertical-align: top;
+    }
+    .image-section img {
+      max-width: 100%;
+      height: auto;
+      border-radius: 8px;
+      box-shadow: 0 0 10px rgba(0,0,0,0.1);
+    }
+    ul {
+      list-style-type: square;
+      padding-left: 20px;
+    }
+    li {
+      margin-bottom: 5px;
+    }
+    .audio-btn {
+      margin-top: 10px;
+      cursor: pointer;
+      color: #007BFF;
+      text-decoration: underline;
+    }
+    .source-link {
+      margin-top: 20px;
+      font-weight: bold;
+    }
+  </style>
+</head>
+<body>
+
+<h1>🌐 智能双语翻译与词汇学习工具</h1>
+
+<input type="text" id="urlInput" placeholder="请输入 chinadaily 文章链接" />
+
+<button onclick="generateContent()">生成内容</button>
+
+<div class="source-link" id="sourceLink"></div>
+<div id="contentArea"></div>
+
+<script>
+  async function generateContent() {
+    const url = document.getElementById("urlInput").value.trim();
+    if (!url) {
+      alert("请输入有效的网址");
+      return;
+    }
+
+    const contentArea = document.getElementById("contentArea");
+    const sourceLink = document.getElementById("sourceLink");
+
+    contentArea.innerHTML = "<p>正在加载内容...</p>";
+    sourceLink.innerHTML = "";
+
+    try {
+      const res = await fetch("https://bilingual-translator.onrender.com/fetch",  {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url })
+      });
+
+      const data = await res.json();
+      renderContent(data);
+      sourceLink.innerHTML = `<p>🔗 查看原文：<a href="${data.sourceUrl}" target="_blank">${data.sourceUrl}</a></p>`;
+    } catch (e) {
+      contentArea.innerHTML = `<p style="color:red;">加载失败: ${e.message}</p>`;
+    }
+  }
+
+  function renderContent(data) {
+    const contentArea = document.getElementById("contentArea");
+    contentArea.innerHTML = "";
+
+    data.translations.forEach(item => {
+      const div = document.createElement("div");
+      div.className = "translation";
+
+      div.innerHTML = `
+        <div class="en">${item.en}<br><span class="audio-btn" onclick="speak('${item.en.replace(/'/g, "\\'")}', 'en')">🔊 英文朗读</span></div>
+        <div class="zh">${item.zh}<br><span class="audio-btn" onclick="speak('${item.zh.replace(/'/g, "\\'")}', 'zh')">🔊 中文朗读</span></div>
+        <div class="vocab">
+          <ul>
+            ${item.vocab.map(word => `<li><strong>${word}</strong> — ${getWordDetail(word)}</li>`).join("")}
+          </ul>
+        </div>
+      `;
+      contentArea.appendChild(div);
+    });
+
+    if (data.images && data.images.length > 0) {
+      const imageSection = document.createElement("div");
+      imageSection.className = "image-section";
+      imageSection.innerHTML = "<h2>🖼️ 原文配图</h2>";
+      data.images.forEach(imgUrl => {
+        const img = document.createElement("img");
+        img.src = imgUrl;
+        img.alt = "原文图片";
+        img.onerror = () => img.style.display = 'none';
+        imageSection.appendChild(img);
+      });
+      contentArea.appendChild(imageSection);
+    }
+  }
+
+  function getWordDetail(word) {
+    const details = {
+      participants: "/pɑːrˈtɪsɪpənts/ — 参与者",
+      multisport: "/ˌmʌltiˈspɔːrt/ — 多项运动",
+      autonomous: "/ɔːˈtɒnəməs/ — 自治的",
+      maneuvering: "/məˈnjuːvərɪŋ/ — 操作、操控",
+      challenging: "/ˈtʃælɪndʒɪŋ/ — 富有挑战性的",
+      contestants: "/kənˈtestənts/ — 参赛者",
+      rapids: "/ˈræpɪdz/ — 急流"
+    };
+    return details[word] || "";
+  }
+
+  function speak(text, lang) {
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.lang = lang === "en" ? "en-US" : "zh-CN";
+    speechSynthesis.speak(utterance);
+  }
+</script>
+
+</body>
+</html>
