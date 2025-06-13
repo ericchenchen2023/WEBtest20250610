@@ -4,16 +4,22 @@ const puppeteer = require('puppeteer-core');
 const chromium = require('@sparticuz/chromium');
 
 const app = express();
-app.use(cors());
+
+// ✅ 使用 CORS 并指定允许的源
+app.use(cors({
+  origin: "https://ericchenchen2023.github.io",  // 替换为你的 GitHub Pages 地址
+  methods: ["GET", "POST"],
+  allowedHeaders: ["Content-Type"]
+}));
+
 app.use(express.json());
 
-// CET-4+ 单词库（示例）
+// CET-4+ 单词库
 const cet4Words = new Set([
   'participants', 'multisport', 'autonomous',
   'maneuvering', 'challenging', 'contestants', 'rapids'
 ]);
 
-// 抓取并处理网页内容
 async function fetchPage(url) {
   console.log(`🔍 正在抓取页面: ${url}`);
 
@@ -26,36 +32,30 @@ async function fetchPage(url) {
   const page = await browser.newPage();
 
   try {
-    // 设置 User-Agent，模拟真实浏览器
     await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
 
-    // 访问目标 URL，延长超时时间为 120 秒
     await page.goto(url, {
       waitUntil: 'networkidle2',
       timeout: 120000
     });
 
-    // 模拟滚动到底部，触发 JS 动态加载内容
+    // 模拟滚动到底部，触发 JS 加载
     await page.evaluate(() => {
       window.scrollBy(0, document.body.scrollHeight);
     });
-    await page.waitForTimeout(5000); // 等待内容加载完成
+    await page.waitForTimeout(5000);
 
-    // 尝试定位文章正文容器
     const content = await page.evaluate(() => {
       const container = document.querySelector('.article-content') ||
                          document.querySelector('.main_art') ||
                          document.querySelector('#Content') ||
-                         document.querySelector('.content') ||
                          document.body;
 
-      // 提取多种可能的段落标签（如 p、span、div）
-      const paras = Array.from(container.querySelectorAll('p, span, div'))
-                         .filter(el => el.offsetHeight > 0) // 过滤隐藏元素
-                         .map(el => el.innerText.trim())
+      const paras = Array.from(container.querySelectorAll('p, span'))
+                         .filter(el => el.offsetHeight > 0)
+                         .map(p => p.innerText.trim())
                          .filter(Boolean);
 
-      // 提取图片链接
       const images = Array.from(container.querySelectorAll('img'))
                          .map(img => img.src)
                          .filter(src => src && src.startsWith('http'));
@@ -65,7 +65,6 @@ async function fetchPage(url) {
 
     console.log(`✅ 成功抓取到 ${content.paras.length} 段文字`);
 
-    // 翻译段落（带超时机制）
     const translatedParas = [];
     for (let para of content.paras) {
       try {
@@ -77,9 +76,8 @@ async function fetchPage(url) {
       }
     }
 
-    // 提取关键词
     const translations = content.paras.map((en, i) => ({
-      en: en,
+      en,
       zh: translatedParas[i],
       vocab: [...cet4Words].filter(word => en.toLowerCase().includes(word))
     }));
@@ -95,7 +93,6 @@ async function fetchPage(url) {
   }
 }
 
-// API 接口：POST /fetch
 app.post('/fetch', async (req, res) => {
   const { url } = req.body;
   if (!url) {
@@ -113,12 +110,10 @@ app.post('/fetch', async (req, res) => {
   }
 });
 
-// 可选：添加欢迎页
 app.get('/', (req, res) => {
   res.json({ message: "智能双语翻译工具 API 已启动！", usage: "POST /fetch" });
 });
 
-// 启动服务
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`🟢 服务运行在端口 ${PORT}`);
