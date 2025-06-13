@@ -1,7 +1,7 @@
 const express = require('express');
 const cors = require('cors');
-const puppeteer = require('puppeteer');
-const translate = require('translate-google');
+const puppeteer = require('puppeteer-core');
+const chromium = require('@sparticuz/chromium');
 
 const app = express();
 app.use(cors());
@@ -15,9 +15,11 @@ const cet4Words = new Set([
 
 async function fetchPage(url) {
   const browser = await puppeteer.launch({
-    headless: 'new',
-    args: ['--no-sandbox', '--disable-setuid-sandbox']
+    args: chromium.args,
+    executablePath: await chromium.executablePath(),
+    headless: true
   });
+
   const page = await browser.newPage();
   await page.goto(url, { waitUntil: 'networkidle2' });
 
@@ -29,16 +31,18 @@ async function fetchPage(url) {
 
   await browser.close();
 
+  // 翻译段落
   const translatedParas = [];
   for (let para of content.paras) {
     try {
-      const zh = await translate(para, { to: 'zh-cn' });
+      const zh = await require('translate-google')(para, { to: 'zh-cn' });
       translatedParas.push(zh);
     } catch (e) {
       translatedParas.push("[翻译失败]");
     }
   }
 
+  // 提取关键词
   const translations = content.paras.map((en, i) => ({
     en,
     zh: translatedParas[i],
@@ -65,6 +69,7 @@ app.post('/fetch', async (req, res) => {
   }
 });
 
-app.listen(3000, () => {
-  console.log('Server running on http://localhost:3000');
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
 });
