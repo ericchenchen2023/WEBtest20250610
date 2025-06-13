@@ -13,7 +13,10 @@ const cet4Words = new Set([
   'maneuvering', 'challenging', 'contestants', 'rapids'
 ]);
 
+// 抓取并处理网页内容
 async function fetchPage(url) {
+  console.log(`🔍 正在抓取页面: ${url}`);
+
   const browser = await puppeteer.launch({
     args: chromium.args,
     executablePath: await chromium.executablePath(),
@@ -24,12 +27,27 @@ async function fetchPage(url) {
   await page.goto(url, { waitUntil: 'networkidle2' });
 
   const content = await page.evaluate(() => {
-    const paras = Array.from(document.querySelectorAll('p')).map(p => p.innerText.trim()).filter(Boolean);
-    const images = Array.from(document.querySelectorAll('img')).map(img => img.src);
+    // 尝试匹配 chinadaily 的文章正文容器
+    const container = document.querySelector('.article-content') ||
+                       document.querySelector('.main_art') ||
+                       document.body;
+
+    // 提取段落文本
+    const paras = Array.from(container.querySelectorAll('p'))
+                       .map(p => p.innerText.trim())
+                       .filter(Boolean);
+
+    // 提取图片链接
+    const images = Array.from(container.querySelectorAll('img'))
+                       .map(img => img.src)
+                       .filter(src => src && src.startsWith('http'));
+
     return { paras, images };
   });
 
   await browser.close();
+
+  console.log(`✅ 成功抓取到 ${content.paras.length} 段文字`);
 
   // 翻译段落
   const translatedParas = [];
@@ -38,6 +56,7 @@ async function fetchPage(url) {
       const zh = await require('translate-google')(para, { to: 'zh-cn' });
       translatedParas.push(zh);
     } catch (e) {
+      console.error("❌ 翻译失败:", e.message);
       translatedParas.push("[翻译失败]");
     }
   }
@@ -51,25 +70,36 @@ async function fetchPage(url) {
 
   return {
     translations,
-    images: content.images.filter(src => src.startsWith('http')),
+    images: content.images,
     sourceUrl: url
   };
 }
 
+// API 接口
 app.post('/fetch', async (req, res) => {
   const { url } = req.body;
-  if (!url) return res.status(400).send("Missing URL");
+  if (!url) {
+    console.warn("⚠️ 缺少 URL 参数");
+    return res.status(400).json({ error: "缺少参数", message: "Missing URL" });
+  }
 
   try {
     const data = await fetchPage(url);
+    console.log(`📩 返回 ${data.translations.length} 条翻译结果`);
     res.json(data);
   } catch (err) {
-    console.error(err);
-    res.status(500).send("抓取失败");
+    console.error("💥 抓取失败:", err.message);
+    res.status(500).json({ error: "抓取失败", message: err.message });
   }
 });
 
+// 可选：添加欢迎页
+app.get('/', (req, res) => {
+  res.json({ message: "智能双语翻译工具 API 已启动！", usage: "POST /fetch" });
+});
+
+// 启动服务
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
+  console.log(`🟢 服务运行在端口 ${PORT}`);
 });
