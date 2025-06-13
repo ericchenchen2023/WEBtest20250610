@@ -26,27 +26,36 @@ async function fetchPage(url) {
   const page = await browser.newPage();
 
   try {
-    // 延长超时时间为 120 秒，并等待网络空闲
+    // 设置 User-Agent，模拟真实浏览器
+    await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
+
+    // 访问目标 URL，延长超时时间为 120 秒
     await page.goto(url, {
       waitUntil: 'networkidle2',
       timeout: 120000
     });
 
-    // 等待关键内容加载（可选）
-    await page.waitForSelector('p, .article-content, .main_art').catch(() => {
-      console.warn("⚠️ 关键内容未加载完成");
+    // 模拟滚动到底部，触发 JS 动态加载内容
+    await page.evaluate(() => {
+      window.scrollBy(0, document.body.scrollHeight);
     });
+    await page.waitForTimeout(5000); // 等待内容加载完成
 
+    // 尝试定位文章正文容器
     const content = await page.evaluate(() => {
       const container = document.querySelector('.article-content') ||
                          document.querySelector('.main_art') ||
                          document.querySelector('#Content') ||
+                         document.querySelector('.content') ||
                          document.body;
 
-      const paras = Array.from(container.querySelectorAll('p'))
-                         .map(p => p.innerText.trim())
+      // 提取多种可能的段落标签（如 p、span、div）
+      const paras = Array.from(container.querySelectorAll('p, span, div'))
+                         .filter(el => el.offsetHeight > 0) // 过滤隐藏元素
+                         .map(el => el.innerText.trim())
                          .filter(Boolean);
 
+      // 提取图片链接
       const images = Array.from(container.querySelectorAll('img'))
                          .map(img => img.src)
                          .filter(src => src && src.startsWith('http'));
@@ -56,7 +65,7 @@ async function fetchPage(url) {
 
     console.log(`✅ 成功抓取到 ${content.paras.length} 段文字`);
 
-    // 翻译段落
+    // 翻译段落（带超时机制）
     const translatedParas = [];
     for (let para of content.paras) {
       try {
@@ -70,7 +79,7 @@ async function fetchPage(url) {
 
     // 提取关键词
     const translations = content.paras.map((en, i) => ({
-      en,
+      en: en,
       zh: translatedParas[i],
       vocab: [...cet4Words].filter(word => en.toLowerCase().includes(word))
     }));
@@ -86,7 +95,7 @@ async function fetchPage(url) {
   }
 }
 
-// API 接口
+// API 接口：POST /fetch
 app.post('/fetch', async (req, res) => {
   const { url } = req.body;
   if (!url) {
