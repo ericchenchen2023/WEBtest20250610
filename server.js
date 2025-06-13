@@ -24,55 +24,66 @@ async function fetchPage(url) {
   });
 
   const page = await browser.newPage();
-  await page.goto(url, { waitUntil: 'networkidle2' });
 
-  const content = await page.evaluate(() => {
-    // 尝试匹配 chinadaily 的文章正文容器
-    const container = document.querySelector('.article-content') ||
-                       document.querySelector('.main_art') ||
-                       document.body;
+  try {
+    // 延长超时时间为 120 秒，并等待网络空闲
+    await page.goto(url, {
+      waitUntil: 'networkidle2',
+      timeout: 120000
+    });
 
-    // 提取段落文本
-    const paras = Array.from(container.querySelectorAll('p'))
-                       .map(p => p.innerText.trim())
-                       .filter(Boolean);
+    // 等待关键内容加载（可选）
+    await page.waitForSelector('p, .article-content, .main_art').catch(() => {
+      console.warn("⚠️ 关键内容未加载完成");
+    });
 
-    // 提取图片链接
-    const images = Array.from(container.querySelectorAll('img'))
-                       .map(img => img.src)
-                       .filter(src => src && src.startsWith('http'));
+    const content = await page.evaluate(() => {
+      const container = document.querySelector('.article-content') ||
+                         document.querySelector('.main_art') ||
+                         document.querySelector('#Content') ||
+                         document.body;
 
-    return { paras, images };
-  });
+      const paras = Array.from(container.querySelectorAll('p'))
+                         .map(p => p.innerText.trim())
+                         .filter(Boolean);
 
-  await browser.close();
+      const images = Array.from(container.querySelectorAll('img'))
+                         .map(img => img.src)
+                         .filter(src => src && src.startsWith('http'));
 
-  console.log(`✅ 成功抓取到 ${content.paras.length} 段文字`);
+      return { paras, images };
+    });
 
-  // 翻译段落
-  const translatedParas = [];
-  for (let para of content.paras) {
-    try {
-      const zh = await require('translate-google')(para, { to: 'zh-cn' });
-      translatedParas.push(zh);
-    } catch (e) {
-      console.error("❌ 翻译失败:", e.message);
-      translatedParas.push("[翻译失败]");
+    console.log(`✅ 成功抓取到 ${content.paras.length} 段文字`);
+
+    // 翻译段落
+    const translatedParas = [];
+    for (let para of content.paras) {
+      try {
+        const zh = await require('translate-google')(para, { to: 'zh-cn' });
+        translatedParas.push(zh);
+      } catch (e) {
+        console.error("❌ 翻译失败:", e.message);
+        translatedParas.push("[翻译失败]");
+      }
     }
+
+    // 提取关键词
+    const translations = content.paras.map((en, i) => ({
+      en,
+      zh: translatedParas[i],
+      vocab: [...cet4Words].filter(word => en.toLowerCase().includes(word))
+    }));
+
+    return {
+      translations,
+      images: content.images,
+      sourceUrl: url
+    };
+
+  } finally {
+    await browser.close();
   }
-
-  // 提取关键词
-  const translations = content.paras.map((en, i) => ({
-    en,
-    zh: translatedParas[i],
-    vocab: [...cet4Words].filter(word => en.toLowerCase().includes(word))
-  }));
-
-  return {
-    translations,
-    images: content.images,
-    sourceUrl: url
-  };
 }
 
 // API 接口
